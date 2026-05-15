@@ -425,6 +425,17 @@ body {
   background: rgba(0, 0, 0, 0.28);
   border: 1px solid rgba(255, 255, 255, 0.07);
 }
+.doc-academic-root .acad-eq-unicode {
+  font-family: 'Newsreader', 'Cambria Math', 'STIX Two Math', serif;
+  font-size: 1.18em;
+  line-height: 1.75;
+  letter-spacing: 0.025em;
+  color: #f0f2f7;
+  font-feature-settings: 'kern' 1, 'liga' 1;
+}
+.doc-academic-root .acad-eq-unicode .sym {
+  font-size: 1em;
+}
 .doc-academic-root .acad-eq .katex-display {
   margin: 0;
 }

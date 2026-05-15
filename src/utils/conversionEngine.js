@@ -1,5 +1,10 @@
 import katex from 'katex'
 import renderMathInElement from 'katex/contrib/auto-render'
+import {
+  applyMathTypography,
+  equationToUnicode,
+  isComplexLatex,
+} from './mathTypography'
 
 export const CATEGORIES = {
   operators: {
@@ -283,8 +288,8 @@ export function escHtml(s) {
     .replace(/'/g, '&#039;')
 }
 
-export function extractPlain(raw, activeCategories) {
-  let text = raw
+export function extractPlain(raw, activeCategories, opt = {}) {
+  let text = opt.preprocessed ? raw : applyMathTypography(raw)
 
   if (activeCategories.has('operators')) {
     const ops = [...CATEGORIES.operators.multiChar].sort(
@@ -336,7 +341,7 @@ export function extractPlain(raw, activeCategories) {
 
 export function convert(raw, activeCategories, opt = {}) {
   const lineBreaks = opt.lineBreaks !== false
-  let text = raw
+  let text = opt.preprocessed ? raw : applyMathTypography(raw)
   const placeholders = new Map()
   const diffStats = new Map()
   let phId = 0
@@ -629,6 +634,21 @@ function messyToLatex(expr) {
   return normalizeLatexForKatex(s)
 }
 
+function renderUnicodeEquation(expr, activeCategories) {
+  const uni = equationToUnicode(expr)
+  const { html } = convert(uni, activeCategories, { lineBreaks: false, preprocessed: true })
+  return `<div class="acad-eq acad-eq-unicode" data-unicode-math="1">${html}</div>`
+}
+
+function renderEquationBlock(expr, activeCategories) {
+  const t = String(expr).trim()
+  if (!t) return ''
+  if (isComplexLatex(t)) {
+    return `<div class="acad-eq" data-katex-display="1" data-katex="${escAttr(messyToLatex(t))}"></div>`
+  }
+  return renderUnicodeEquation(t, activeCategories)
+}
+
 function findEquationSpanEnd(str) {
   const m =
     /\s+(?:utility|production|function|consider|macroeconomic|where|given|subject|implies|therefore|and|for|we|the|this|that|next|finally|represented|aggregate|following|output|definitions?)\b/i.exec(
@@ -690,6 +710,9 @@ function isLikelyDisplayEquation(t) {
   if (/^\$\$[\s\S]*\$\$$/.test(s) || /^\\\[[\s\S]*\\\]$/.test(s)) return true
   if (/^\\begin\{(align|aligned|equation|gather|matrix|pmatrix|bmatrix)\}/.test(s))
     return true
+  if (/^(?:sum|prod|int|oint|lim)\s*[_^({]/i.test(s)) return true
+  if (/^[A-Za-z](?:_[A-Za-z0-9]+|\^[0-9(])/.test(s) && !/\b(the|and|for|with|that|this)\b/i.test(s))
+    return true
   if (!/(?:^|\s)[A-Za-z](?:\([A-Za-z]\))?\s*=/.test(s)) return false
   const prose = (s.match(/\b[a-z]{5,}\b/g) || []).filter(
     (w) =>
@@ -730,9 +753,7 @@ export function buildAcademicArticle(raw, activeCategories) {
       const t = line.trim()
       if (!t) continue
       if (isLikelyDisplayEquation(t)) {
-        htmlParts.push(
-          `<div class="acad-eq" data-katex-display="1" data-katex="${escAttr(messyToLatex(t))}"></div>`,
-        )
+        htmlParts.push(renderEquationBlock(t, activeCategories))
         continue
       }
       const mix = splitMixedLine(t)
@@ -745,9 +766,7 @@ export function buildAcademicArticle(raw, activeCategories) {
           const tx = p.text.trim()
           if (tx) htmlParts.push(`<p class="acad-p">${renderProseHtml(tx)}</p>`)
         } else {
-          htmlParts.push(
-            `<div class="acad-eq" data-katex-display="1" data-katex="${escAttr(messyToLatex(p.text))}"></div>`,
-          )
+          htmlParts.push(renderEquationBlock(p.text, activeCategories))
         }
       }
     }
@@ -839,7 +858,7 @@ export function buildAcademicArticle(raw, activeCategories) {
       const code = body.join('\n')
       const inner =
         lang === 'math' || lang === 'latex' || lang === 'katex'
-          ? `<div class="acad-eq" data-katex-display="1" data-katex="${escAttr(normalizeLatexForKatex(code.trim()))}"></div>`
+          ? renderEquationBlock(code.trim(), activeCategories)
           : `<pre class="acad-pre">${conv(code, { lineBreaks: true }).html}</pre>`
       parts.push(inner)
       blockIndex++
@@ -981,7 +1000,11 @@ export function buildAcademicPlain(raw, activeCategories) {
       } else if (n.nodeType === 1) {
         const tag = n.tagName
         if (tag === 'DIV' && n.classList.contains('acad-eq')) {
-          out.push('\n' + (n.getAttribute('data-katex') || n.textContent).trim() + '\n')
+          const plain =
+            n.hasAttribute('data-unicode-math') || n.classList.contains('acad-eq-unicode')
+              ? n.textContent
+              : n.getAttribute('data-katex') || n.textContent
+          out.push('\n' + plain.trim() + '\n')
         } else if (tag === 'PRE') {
           out.push('\n' + n.textContent + '\n')
         } else if (/^H[1-6]$/.test(tag) || tag === 'LI') {
@@ -995,7 +1018,7 @@ export function buildAcademicPlain(raw, activeCategories) {
 }
 
 export function applyKatexToOutput(root) {
-  root.querySelectorAll('[data-katex]').forEach((el) => {
+  root.querySelectorAll('[data-katex]:not([data-unicode-math])').forEach((el) => {
     let tex = el.getAttribute('data-katex')
     if (!tex) return
     tex = normalizeLatexForKatex(tex)
@@ -1021,7 +1044,7 @@ export function applyKatexToOutput(root) {
         { left: '\\(', right: '\\)', display: false },
       ],
       ignoredTags: ['script', 'style', 'textarea', 'pre', 'code'],
-      ignoredClasses: ['katex', 'katex-display'],
+      ignoredClasses: ['katex', 'katex-display', 'acad-eq-unicode'],
       strict: false,
       trust: true,
       preProcess: (math) => normalizeLatexForKatex(math),

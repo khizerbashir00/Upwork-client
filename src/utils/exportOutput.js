@@ -22,6 +22,7 @@ const DOC_EXPORT_CSS = `
   .doc-academic-root .acad-li { margin:0.35rem 0; }
   .doc-academic-root .acad-eq { display:block; text-align:center; margin:1.15rem 0 1.35rem; padding:0.85rem 0.75rem; border-radius:0.5rem; background:rgba(0,0,0,0.28); border:1px solid rgba(255,255,255,0.07); }
   .doc-academic-root .acad-eq .katex-display { margin:0; }
+  .doc-academic-root .acad-eq-unicode { font-family:'Newsreader','Cambria Math','STIX Two Math',serif; font-size:1.18em; line-height:1.75; letter-spacing:0.025em; color:#f0f2f7; }
   .doc-academic-root .katex, .doc-academic-root .katex * { color:#f0f2f7 !important; }
   .doc-academic-root .katex .mord.mtight { color:inherit !important; }
   .doc-academic-root .acad-p .katex, .doc-academic-root .acad-li .katex { font-size:1.05em; }
