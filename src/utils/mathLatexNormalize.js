@@ -3,6 +3,8 @@
  * Converts ASCII math, economics notation, and Unicode symbols to renderable TeX.
  */
 
+import { repairMalformedLatex } from './latexRepair'
+
 const GREEK_LATEX = {
   alpha: '\\alpha',
   beta: '\\beta',
@@ -352,7 +354,7 @@ function convertAlignLines(s) {
  * Full LaTeX normalization pipeline for KaTeX rendering.
  */
 export function normalizeLatexForKatex(input) {
-  let s = String(input).trim()
+  let s = repairMalformedLatex(String(input).trim())
   if (!s) return s
 
   const dm = s.match(/^\$\$([\s\S]*)\$\$$/)

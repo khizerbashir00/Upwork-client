@@ -10,6 +10,7 @@ import {
   buildAcademicArticle,
   buildAcademicPlain,
   convert,
+  preprocessAcademicDocument,
 } from '../utils/conversionEngine'
 import { INITIAL_DEMO, SAMPLES } from '../utils/samples'
 import { exportOutputAsPdf, exportOutputAsWord } from '../utils/exportOutput'
@@ -96,9 +97,12 @@ export default function HomePage() {
       }
     }
 
-    const result = convert(raw, activeCategories)
-    const articleHtml = buildAcademicArticle(raw, activeCategories)
-    const lastPlain = `${buildAcademicPlain(raw, activeCategories)}\n\n${result.plain}`
+    const processed = preprocessAcademicDocument(raw)
+    const result = convert(processed, activeCategories, { preprocessed: true })
+    const articleHtml = buildAcademicArticle(processed, activeCategories, {
+      preprocessed: true,
+    })
+    const lastPlain = `${buildAcademicPlain(processed, activeCategories)}\n\n${result.plain}`
     const sorted = [...result.stats.values()].sort((a, b) => b.count - a.count)
 
     return {
@@ -222,7 +226,7 @@ export default function HomePage() {
     }
     try {
       exportOutputAsWord(el)
-      showToast('Downloaded glyph-output.doc')
+      showToast('Downloaded glyph-output.docx')
     } catch {
       showToast('Word export failed', '#fb7185')
     }

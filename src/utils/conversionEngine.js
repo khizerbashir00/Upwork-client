@@ -1,15 +1,23 @@
 import katex from 'katex'
 import renderMathInElement from 'katex/contrib/auto-render'
+import { preprocessAcademicDocument } from './academicPipeline'
+import { buildHighlightedPreHtml } from './codeHighlight'
 import {
   equationToUnicode,
   isLikelyDisplayEquation,
   normalizeLatexForKatex,
-  preprocessMathText,
+  parseAlignedEquationBlock,
   prepareEquationRender,
   wrapInlineMathDelimiters,
 } from './mathEngine'
 
-export { normalizeLatexForKatex, preprocessMathText, prepareEquationRender } from './mathEngine'
+export {
+  normalizeLatexForKatex,
+  prepareEquationRender,
+  isLikelyDisplayEquation,
+  parseAlignedEquationBlock,
+} from './mathEngine'
+export { preprocessAcademicDocument } from './academicPipeline'
 
 export const CATEGORIES = {
   operators: {
@@ -294,7 +302,7 @@ export function escHtml(s) {
 }
 
 export function extractPlain(raw, activeCategories, opt = {}) {
-  let text = opt.preprocessed ? raw : preprocessMathText(raw)
+  let text = opt.preprocessed ? raw : preprocessAcademicDocument(raw)
 
   if (activeCategories.has('operators')) {
     const ops = [...CATEGORIES.operators.multiChar].sort(
@@ -346,7 +354,7 @@ export function extractPlain(raw, activeCategories, opt = {}) {
 
 export function convert(raw, activeCategories, opt = {}) {
   const lineBreaks = opt.lineBreaks !== false
-  let text = opt.preprocessed ? raw : preprocessMathText(raw)
+  let text = opt.preprocessed ? raw : preprocessAcademicDocument(raw)
   const placeholders = new Map()
   const diffStats = new Map()
   let phId = 0
@@ -529,8 +537,9 @@ function splitMixedLine(line) {
   return parts
 }
 
-export function buildAcademicArticle(raw, activeCategories) {
-  const conv = (t, o = {}) => convert(t, activeCategories, o)
+export function buildAcademicArticle(raw, activeCategories, opt = {}) {
+  const prepared = opt.preprocessed ? raw : preprocessAcademicDocument(raw)
+  const conv = (t, o = {}) => convert(t, activeCategories, { ...o, preprocessed: true })
 
   function renderProseHtml(r) {
     const chunks = r.split(/(`[^`\n]+`|\*\*[^*\n]+\*\*)/g)
@@ -549,20 +558,34 @@ export function buildAcademicArticle(raw, activeCategories) {
     return out
   }
 
-  function renderParagraphBody(r) {
+  function renderParagraphBody(r, lineOffset = 0) {
     const lines = r.split(/\n/)
     const htmlParts = []
-    for (const ln of lines) {
-      const line = ln.trimEnd()
+    let li = 0
+    while (li < lines.length) {
+      const line = lines[li].trimEnd()
       const t = line.trim()
-      if (!t) continue
+      if (!t) {
+        li++
+        continue
+      }
+      const aligned = parseAlignedEquationBlock(lines, li)
+      if (aligned) {
+        htmlParts.push(
+          `<div class="acad-eq" data-katex-display="1" data-katex="${escAttr(aligned.latex)}"></div>`,
+        )
+        li = aligned.next
+        continue
+      }
       if (isLikelyDisplayEquation(t)) {
         htmlParts.push(renderEquationBlock(t, activeCategories))
+        li++
         continue
       }
       const mix = splitMixedLine(t)
       if (mix.length === 1 && mix[0].kind === 'text') {
         htmlParts.push(`<p class="acad-p">${renderProseHtml(t)}</p>`)
+        li++
         continue
       }
       for (const p of mix) {
@@ -573,6 +596,7 @@ export function buildAcademicArticle(raw, activeCategories) {
           htmlParts.push(renderEquationBlock(p.text, activeCategories))
         }
       }
+      li++
     }
     return htmlParts.join('')
   }
@@ -620,7 +644,7 @@ export function buildAcademicArticle(raw, activeCategories) {
     }
   }
 
-  const lines = raw.replace(/\r\n/g, '\n').split('\n')
+  const lines = prepared.replace(/\r\n/g, '\n').split('\n')
   const parts = []
   let i = 0
   let blockIndex = 0
@@ -663,7 +687,7 @@ export function buildAcademicArticle(raw, activeCategories) {
       const inner =
         lang === 'math' || lang === 'latex' || lang === 'katex'
           ? renderEquationBlock(code.trim(), activeCategories)
-          : `<pre class="acad-pre">${conv(code, { lineBreaks: true }).html}</pre>`
+          : buildHighlightedPreHtml(code, lang || 'text')
       parts.push(inner)
       blockIndex++
       continue
@@ -715,30 +739,47 @@ export function buildAcademicArticle(raw, activeCategories) {
       continue
     }
 
-    if (/^[-*•·]\s+/.test(t)) {
-      const items = []
-      while (i < lines.length && /^[-*•·]\s+/.test(lines[i].trim())) {
-        items.push(lines[i].trim().replace(/^[-*•·]\s+/, ''))
+    if (/^(\s*)([-*•·])\s+/.test(line) || /^(\s*)\d+\.\s+/.test(line)) {
+      const listRows = []
+      while (i < lines.length) {
+        const m = /^(\s*)([-*•·]|\d+\.)\s+(.+)$/.exec(lines[i])
+        if (!m) break
+        listRows.push({
+          indent: m[1].length,
+          ordered: /\d+\./.test(m[2]),
+          text: m[3],
+        })
         i++
       }
-      const lis = items
-        .map((it) => `<li class="acad-li">${renderParagraphBody(it)}</li>`)
-        .join('')
-      parts.push(`<ul class="acad-ul">${lis}</ul>`)
-      blockIndex++
-      continue
-    }
-
-    if (/^\d+\.\s+/.test(t)) {
-      const items = []
-      while (i < lines.length && /^\d+\.\s+/.test(lines[i].trim())) {
-        items.push(lines[i].trim().replace(/^\d+\.\s+/, ''))
-        i++
+      const renderList = (rows, start, baseIndent, ordered) => {
+        const lis = []
+        let k = start
+        while (k < rows.length && rows[k].indent >= baseIndent) {
+          const row = rows[k]
+          if (row.indent > baseIndent) {
+            k++
+            continue
+          }
+          let nested = ''
+          if (k + 1 < rows.length && rows[k + 1].indent > baseIndent) {
+            const sub = renderList(rows, k + 1, rows[k + 1].indent, rows[k + 1].ordered)
+            nested = sub.html
+            k = sub.next
+          } else {
+            k++
+          }
+          lis.push(
+            `<li class="acad-li">${nested}<div class="acad-li-content">${renderParagraphBody(row.text)}</div></li>`,
+          )
+        }
+        const tag = ordered ? 'ol' : 'ul'
+        const cls = ordered ? 'acad-ol' : 'acad-ul'
+        return { html: `<${tag} class="${cls}">${lis.join('')}</${tag}>`, next: k }
       }
-      const lis = items
-        .map((it) => `<li class="acad-li">${renderParagraphBody(it)}</li>`)
-        .join('')
-      parts.push(`<ol class="acad-ol">${lis}</ol>`)
+      if (listRows.length > 0) {
+        const built = renderList(listRows, 0, listRows[0].indent, listRows[0].ordered)
+        parts.push(built.html)
+      }
       blockIndex++
       continue
     }

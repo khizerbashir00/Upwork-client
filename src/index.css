@@ -476,6 +476,40 @@ body {
   border: 1px solid rgba(255, 255, 255, 0.08);
   color: rgba(231, 233, 238, 0.88);
 }
+.doc-academic-root .acad-pre code {
+  font-family: inherit;
+  background: transparent;
+  border: none;
+  padding: 0;
+}
+.doc-academic-root .acad-pre .token.comment,
+.doc-academic-root .acad-pre .token.prolog,
+.doc-academic-root .acad-pre .token.doctype { color: #6a9955; }
+.doc-academic-root .acad-pre .token.punctuation { color: #808080; }
+.doc-academic-root .acad-pre .token.property,
+.doc-academic-root .acad-pre .token.tag,
+.doc-academic-root .acad-pre .token.boolean,
+.doc-academic-root .acad-pre .token.number,
+.doc-academic-root .acad-pre .token.constant,
+.doc-academic-root .acad-pre .token.symbol { color: #b5cea8; }
+.doc-academic-root .acad-pre .token.selector,
+.doc-academic-root .acad-pre .token.attr-name,
+.doc-academic-root .acad-pre .token.string,
+.doc-academic-root .acad-pre .token.char { color: #ce9178; }
+.doc-academic-root .acad-pre .token.operator,
+.doc-academic-root .acad-pre .token.entity,
+.doc-academic-root .acad-pre .token.url,
+.doc-academic-root .acad-pre .token.variable { color: #9cdcfe; }
+.doc-academic-root .acad-pre .token.atrule,
+.doc-academic-root .acad-pre .token.attr-value,
+.doc-academic-root .acad-pre .token.keyword { color: #569cd6; }
+.doc-academic-root .acad-pre .token.function,
+.doc-academic-root .acad-pre .token.class-name { color: #dcdcaa; }
+.doc-academic-root .acad-li-content .acad-ul,
+.doc-academic-root .acad-li-content .acad-ol {
+  margin: 0.35rem 0 0.5rem;
+  padding-left: 1.25rem;
+}
 .doc-academic-root .acad-table-wrap {
   overflow-x: auto;
   margin: 0.75rem 0 1.1rem;
