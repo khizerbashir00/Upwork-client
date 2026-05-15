@@ -188,10 +188,13 @@ const MATH_KEYWORDS = [
   ['cbrt', '\u221B'],
   ['sum', '\u2211'],
   ['prod', '\u220F'],
+  ['iiint', '\u222D'],
+  ['iint', '\u222C'],
   ['int', '\u222B'],
   ['oint', '\u222E'],
   ['partial', '\u2202'],
   ['nabla', '\u2207'],
+  ['grad', '\u2207'],
   ['therefore', '\u2234'],
   ['because', '\u2235'],
   ['approx', '\u2248'],
@@ -217,6 +220,29 @@ const MATH_KEYWORDS = [
   ['max', 'max'],
   ['det', 'det'],
   ['arg', 'arg'],
+  ['trace', 'tr'],
+  ['tr', 'tr'],
+  ['Re', 'Re'],
+  ['Im', 'Im'],
+  ['Pr', '\u2119'],
+  ['prob', '\u2119'],
+  ['Cov', 'Cov'],
+  ['Var', 'Var'],
+  ['rank', 'rank'],
+  ['dim', 'dim'],
+  ['ker', 'ker'],
+  ['gcd', 'gcd'],
+  ['lcm', 'lcm'],
+  ['mod', 'mod'],
+  ['sinh', 'sinh'],
+  ['cosh', 'cosh'],
+  ['tanh', 'tanh'],
+  ['arcsin', 'arcsin'],
+  ['arccos', 'arccos'],
+  ['arctan', 'arctan'],
+  ['csc', 'csc'],
+  ['sec', 'sec'],
+  ['cot', 'cot'],
 ]
 
 const PROSE_WORDS = new Set(
@@ -298,6 +324,8 @@ function replaceBigOperators(s) {
   const ops = [
     ['sum', '\u2211'],
     ['prod', '\u220F'],
+    ['iiint', '\u222D'],
+    ['iint', '\u222C'],
     ['int', '\u222B'],
     ['oint', '\u222E'],
   ]
@@ -435,12 +463,66 @@ function italicizeVariables(s, aggressive) {
   })
 }
 
-function replaceDerivatives(s) {
-  return s.replace(/\bd([A-Za-z]{1,4})\b/g, (m, v) => {
+function replaceCalculusNotation(s) {
+  let out = s
+  out = out.replace(/\bgrad\s+([A-Za-z][A-Za-z0-9]*)/gi, (_, f) => '\u2207' + [...f].map((c) => italicizeLetter(c)).join(''))
+  out = out.replace(/\bgrad\b/gi, '\u2207')
+  out = out.replace(/\bcurl\s+([A-Za-z])\b/gi, (_, v) => '\u2207 \u00D7 ' + italicizeLetter(v))
+  out = out.replace(/\bdiv\s+([A-Za-z])\b/gi, (_, v) => '\u2207 \u00B7 ' + italicizeLetter(v))
+  out = out.replace(
+    /\bpartial\s+([A-Za-z][A-Za-z0-9]*)\s*\/\s*partial\s+([A-Za-z])(\^(\d+))?/gi,
+    (_, f, v, __, pow) => {
+      const p = '\u2202'
+      const ff = [...f].map((c) => italicizeLetter(c)).join('')
+      const vv = italicizeLetter(v)
+      if (pow) return `${p}${ff} / ${p}${vv}${toSuperscript(pow)}`
+      return `${p}${ff} / ${p}${vv}`
+    },
+  )
+  out = out.replace(
+    /\bd\^(\d+)\s*\/\s*d([a-zA-Z])\^(\d+)/gi,
+    (_, n, v, m) => {
+      const d = italicizeLetter('d')
+      return `${d}${toSuperscript(n)}/${d}${italicizeLetter(v)}${toSuperscript(m)}`
+    },
+  )
+  out = out.replace(/\bd\^(\d+)\s*\/\s*d([a-zA-Z])/gi, (_, n, v) => {
     const d = italicizeLetter('d')
-    const vv = [...v].map((c) => italicizeLetter(c)).join('')
-    return d + vv
+    return `${d}${toSuperscript(n)}/${d}${italicizeLetter(v)}${toSuperscript(n)}`
   })
+  out = out.replace(/\bd\s*\/\s*d([a-zA-Z])/gi, (_, v) => {
+    const d = italicizeLetter('d')
+    return `${d}/${d}${italicizeLetter(v)}`
+  })
+  out = out.replace(/\bd([A-Za-z]{1,4})\b/g, (m, v) => {
+    if (/^(dx|dy|dz|dt|du|dv)$/i.test(m)) {
+      const d = italicizeLetter('d')
+      const vv = [...v].map((c) => italicizeLetter(c)).join('')
+      return d + vv
+    }
+    return m
+  })
+  return out
+}
+
+function replaceDerivatives(s) {
+  return replaceCalculusNotation(s)
+}
+
+function replaceStatisticsUnicode(s) {
+  return s
+    .replace(/\bE\s*\[\s*([^\]]+)\s*\]/g, (_, x) => '\u2112[' + x.trim() + ']')
+    .replace(/\bVar\s*\(\s*([^)]+)\s*\)/gi, 'Var($1)')
+    .replace(/\bCov\s*\(\s*([^,]+)\s*,\s*([^)]+)\s*\)/gi, 'Cov($1, $2)')
+    .replace(/\bP\s*\(\s*([^)]+)\s*\)/g, '\u2119($1)')
+    .replace(/\bPr\s*\(\s*([^)]+)\s*\)/gi, '\u2119($1)')
+}
+
+function replaceComplexNumbers(s) {
+  return s
+    .replace(/\bRe\s*\(\s*([^)]+)\s*\)/gi, 'Re($1)')
+    .replace(/\bIm\s*\(\s*([^)]+)\s*\)/gi, 'Im($1)')
+    .replace(/\bi\b(?=\s*[=+\-*/])/g, '\u2148')
 }
 
 function replaceScientificNotation(s) {
@@ -478,6 +560,8 @@ function transformMathSegment(segment, options = {}) {
   s = italicizeVariables(s, aggressive)
   s = italicizeSubSuperBases(s)
   s = replaceDerivatives(s)
+  s = replaceStatisticsUnicode(s)
+  s = replaceComplexNumbers(s)
   s = replaceScientificNotation(s)
   s = s.replace(/(\d+)\s*\^\s*([A-Za-z]+)\b/g, (m, n, w) => {
     const g = MATH_GREEK[w.toLowerCase()]
@@ -502,8 +586,14 @@ export function isMathHeavyLine(line) {
   if (/^\\\(|^\\\[/.test(t)) return true
   if (/\\begin\{/.test(t)) return true
   if (/\^|_/.test(t) && /[A-Za-z]/.test(t)) return true
-  if (/\b(sum|int|prod|lim|sqrt|partial|nabla)\b/i.test(t)) return true
+  if (/\b(sum|int|iint|iiint|oint|prod|lim|sqrt|partial|nabla|grad|curl|div|det|binom)\b/i.test(t))
+    return true
   if (/\b(alpha|beta|gamma|theta|lambda|sigma|omega|delta|phi)\b/i.test(t)) return true
+  if (/\bd\s*\/\s*d[a-z]/i.test(t)) return true
+  if (/\bpartial\s+[a-z]/i.test(t)) return true
+  if (/\[\[/.test(t)) return true
+  if (/\|\|[^|]+\|\|/.test(t)) return true
+  if (/\bE\s*\[|\bP\s*\(|\bVar\s*\(/i.test(t)) return true
   if (/[A-Za-z]\s*=\s*[^=]/.test(t) && t.length < 200) return true
   if (/[A-Za-z]_[A-Za-z0-9]/.test(t)) return true
   if (/[A-Za-z]\^[0-9(]/.test(t)) return true

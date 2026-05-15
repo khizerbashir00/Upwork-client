@@ -1,10 +1,15 @@
 import katex from 'katex'
 import renderMathInElement from 'katex/contrib/auto-render'
 import {
-  applyMathTypography,
   equationToUnicode,
-  isComplexLatex,
-} from './mathTypography'
+  isLikelyDisplayEquation,
+  normalizeLatexForKatex,
+  preprocessMathText,
+  prepareEquationRender,
+  wrapInlineMathDelimiters,
+} from './mathEngine'
+
+export { normalizeLatexForKatex, preprocessMathText, prepareEquationRender } from './mathEngine'
 
 export const CATEGORIES = {
   operators: {
@@ -289,7 +294,7 @@ export function escHtml(s) {
 }
 
 export function extractPlain(raw, activeCategories, opt = {}) {
-  let text = opt.preprocessed ? raw : applyMathTypography(raw)
+  let text = opt.preprocessed ? raw : preprocessMathText(raw)
 
   if (activeCategories.has('operators')) {
     const ops = [...CATEGORIES.operators.multiChar].sort(
@@ -341,7 +346,7 @@ export function extractPlain(raw, activeCategories, opt = {}) {
 
 export function convert(raw, activeCategories, opt = {}) {
   const lineBreaks = opt.lineBreaks !== false
-  let text = opt.preprocessed ? raw : applyMathTypography(raw)
+  let text = opt.preprocessed ? raw : preprocessMathText(raw)
   const placeholders = new Map()
   const diffStats = new Map()
   let phId = 0
@@ -446,192 +451,8 @@ export function convert(raw, activeCategories, opt = {}) {
   }
 }
 
-const GREEK_LATEX = {
-  alpha: '\\alpha',
-  beta: '\\beta',
-  gamma: '\\gamma',
-  delta: '\\delta',
-  epsilon: '\\varepsilon',
-  zeta: '\\zeta',
-  eta: '\\eta',
-  theta: '\\theta',
-  iota: '\\iota',
-  kappa: '\\kappa',
-  lambda: '\\lambda',
-  mu: '\\mu',
-  nu: '\\nu',
-  xi: '\\xi',
-  pi: '\\pi',
-  rho: '\\rho',
-  sigma: '\\sigma',
-  tau: '\\tau',
-  phi: '\\varphi',
-  chi: '\\chi',
-  psi: '\\psi',
-  omega: '\\omega',
-  varepsilon: '\\varepsilon',
-  vartheta: '\\vartheta',
-  varphi: '\\varphi',
-  eps: '\\varepsilon',
-}
-
-const UNICODE_GREEK_TO_LATEX = (() => {
-  const m = {
-    '\u0391': '\\mathrm{A}',
-    '\u0392': '\\mathrm{B}',
-    '\u0393': '\\Gamma',
-    '\u0394': '\\Delta',
-    '\u0395': '\\mathrm{E}',
-    '\u0396': '\\mathrm{Z}',
-    '\u0397': '\\mathrm{H}',
-    '\u0398': '\\Theta',
-    '\u0399': '\\mathrm{I}',
-    '\u039A': '\\mathrm{K}',
-    '\u039B': '\\Lambda',
-    '\u039C': '\\mathrm{M}',
-    '\u039D': '\\mathrm{N}',
-    '\u039E': '\\Xi',
-    '\u039F': '\\mathrm{O}',
-    '\u03A0': '\\Pi',
-    '\u03A1': '\\mathrm{P}',
-    '\u03A3': '\\Sigma',
-    '\u03A4': '\\mathrm{T}',
-    '\u03A5': '\\Upsilon',
-    '\u03A6': '\\Phi',
-    '\u03A7': '\\mathrm{X}',
-    '\u03A8': '\\Psi',
-    '\u03A9': '\\Omega',
-    '\u03B1': '\\alpha',
-    '\u03B2': '\\beta',
-    '\u03B3': '\\gamma',
-    '\u03B4': '\\delta',
-    '\u03B5': '\\varepsilon',
-    '\u03B6': '\\zeta',
-    '\u03B7': '\\eta',
-    '\u03B8': '\\theta',
-    '\u03B9': '\\iota',
-    '\u03BA': '\\kappa',
-    '\u03BB': '\\lambda',
-    '\u03BC': '\\mu',
-    '\u03BD': '\\nu',
-    '\u03BE': '\\xi',
-    '\u03BF': 'o',
-    '\u03C0': '\\pi',
-    '\u03C1': '\\rho',
-    '\u03C2': '\\varsigma',
-    '\u03C3': '\\sigma',
-    '\u03C4': '\\tau',
-    '\u03C5': '\\upsilon',
-    '\u03C6': '\\varphi',
-    '\u03C7': '\\chi',
-    '\u03C8': '\\psi',
-    '\u03C9': '\\omega',
-    '\u03D1': '\\vartheta',
-    '\u03D5': '\\phi',
-    '\u03D6': '\\varpi',
-    '\u03F5': '\\epsilon',
-    '\u2202': '\\partial',
-    '\u221E': '\\infty',
-    '\u2211': '\\sum',
-    '\u222B': '\\int',
-    '\u00B7': '\\cdot',
-    '\u00D7': '\\times',
-    '\u2264': '\\leq',
-    '\u2265': '\\geq',
-    '\u2260': '\\neq',
-    '\u2248': '\\approx',
-    '\u2212': '-',
-  }
-  return m
-})()
-
 function escAttr(s) {
   return String(s).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;')
-}
-
-function normalizeLatexForKatex(input) {
-  let s = String(input).trim()
-  if (!s) return s
-
-  const dm = s.match(/^\$\$([\s\S]*)\$\$$/)
-  if (dm) s = dm[1].trim()
-  else if (/^\$([^$]+)\$$/.test(s)) s = RegExp.$1.trim()
-
-  s = s.replace(
-    /\\([\u0391-\u03A9\u03B1-\u03C9\u03D1\u03D5\u03D6\u03F5\u2202\u221E\u2211\u222B])/g,
-    (match, ch) => UNICODE_GREEK_TO_LATEX[ch] || match,
-  )
-
-  for (const [uch, tex] of Object.entries(UNICODE_GREEK_TO_LATEX)) {
-    if (!uch || uch === '\\') continue
-    const esc = uch.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-    s = s.replace(new RegExp(esc, 'g'), tex)
-  }
-
-  const greekNames = [...new Set(Object.keys(GREEK_LATEX))].sort((a, b) => b.length - a.length)
-  for (const name of greekNames) {
-    const tok = GREEK_LATEX[name]
-    const re = new RegExp(`(?<!\\\\)\\b${name}\\b`, 'gi')
-    s = s.replace(re, tok)
-  }
-  s = s.replace(/(?<!\\)\b(infty|infinity)\b/gi, '\\infty')
-  s = s.replace(/(?<!\\)\bpartial\b/gi, '\\partial')
-  s = s.replace(/(?<!\\)\bnabla\b/gi, '\\nabla')
-
-  s = s.replace(/(?<!\\)sum_\(([^)]*)\)\^\(([^)]*)\)/gi, '\\sum_{$1}^{$2}')
-  s = s.replace(/(?<!\\)sum_\(([^)]*)\)\^([A-Za-z0-9+-]+)/gi, '\\sum_{$1}^{$2}')
-  s = s.replace(/(?<!\\)sum_\{([^}]*)\}\^\{([^}]*)\}/gi, '\\sum_{$1}^{$2}')
-  s = s.replace(/(?<!\\)prod_\(([^)]*)\)\^\(([^)]*)\)/gi, '\\prod_{$1}^{$2}')
-  s = s.replace(/(?<!\\)prod_\(([^)]*)\)\^([A-Za-z0-9+-]+)/gi, '\\prod_{$1}^{$2}')
-  s = s.replace(/(?<!\\)int_\(([^)]*)\)\^\(([^)]*)\)/gi, '\\int_{$1}^{$2}')
-  s = s.replace(/(?<!\\)int_\(([^)]*)\)\^([A-Za-z0-9+-]+)/gi, '\\int_{$1}^{$2}')
-  s = s.replace(/(?<!\\)int_([A-Za-z0-9+-]+)\^([A-Za-z0-9+-]+)/gi, '\\int_{$1}^{$2}')
-  s = s.replace(/(?<!\\)lim_\(([^)]*)\)/gi, '\\lim_{$1}')
-  s = s.replace(/(?<!\\)lim_\{([^}]*)\}/gi, '\\lim_{$1}')
-
-  s = s.replace(/(?<!\\)sqrt\s*\(([^)]+)\)/gi, '\\sqrt{$1}')
-  s = s.replace(/(?<!\\)sqrt\s*\{([^}]+)\}/gi, '\\sqrt{$1}')
-
-  s = s.replace(/<=>/g, '\\Leftrightarrow')
-  s = s.replace(/->/g, '\\rightarrow')
-  s = s.replace(/<-/g, '\\leftarrow')
-  s = s.replace(/=>/g, '\\Rightarrow')
-  s = s.replace(/<=/g, '\\leq')
-  s = s.replace(/>=/g, '\\geq')
-  s = s.replace(/!=/g, '\\neq')
-  s = s.replace(/~=|~~/g, '\\approx')
-
-  s = s.replace(/K\^a\b/gi, 'K^{\\alpha}')
-  s = s.replace(/L\^1\s*-\s*a\b/gi, 'L^{1-\\alpha}')
-  s = s.replace(/L\^1-a\b/gi, 'L^{1-\\alpha}')
-
-  s = s.replace(/([A-Za-z0-9)\]])_([A-Za-z0-9]+)(?!})/g, (_, b, sub) =>
-    sub.length === 1 ? `${b}_${sub}` : `${b}_{${sub}}`,
-  )
-  s = s.replace(/([A-Za-z0-9)\]])\^([A-Za-z0-9+-]+)(?!})/g, (_, b, exp) => {
-    if (exp.startsWith('{')) return `${b}^${exp}`
-    if (exp.length === 1) return `${b}^${exp}`
-    return `${b}^{${exp}}`
-  })
-
-  s = s.replace(/\^\{([a-z]{2,12})\}/gi, (m, w) => {
-    const g = GREEK_LATEX[w.toLowerCase()]
-    return g ? `^{${g}}` : m
-  })
-
-  s = s.replace(/(?<!\\)\*(?!\*)/g, ' \\cdot ')
-
-  s = s.replace(/\b(\d+)\s*\/\s*(\d+)\b/g, '\\frac{$1}{$2}')
-  s = s.replace(/\b([A-Za-z])\s*\/\s*([A-Za-z])\b/g, '\\frac{$1}{$2}')
-
-  s = s.replace(/\s+/g, ' ').trim()
-  return s
-}
-
-function messyToLatex(expr) {
-  let s = String(expr).trim()
-  if (!s) return ''
-  return normalizeLatexForKatex(s)
 }
 
 function renderUnicodeEquation(expr, activeCategories) {
@@ -643,10 +464,14 @@ function renderUnicodeEquation(expr, activeCategories) {
 function renderEquationBlock(expr, activeCategories) {
   const t = String(expr).trim()
   if (!t) return ''
-  if (isComplexLatex(t)) {
-    return `<div class="acad-eq" data-katex-display="1" data-katex="${escAttr(messyToLatex(t))}"></div>`
+  const prepared = prepareEquationRender(t)
+  if (prepared.mode === 'katex') {
+    return `<div class="acad-eq" data-katex-display="1" data-katex="${escAttr(prepared.latex)}"></div>`
   }
-  return renderUnicodeEquation(t, activeCategories)
+  if (prepared.mode === 'unicode') {
+    return renderUnicodeEquation(prepared.text, activeCategories)
+  }
+  return ''
 }
 
 function findEquationSpanEnd(str) {
@@ -704,27 +529,6 @@ function splitMixedLine(line) {
   return parts
 }
 
-function isLikelyDisplayEquation(t) {
-  const s = t.trim()
-  if (!s || s.length > 260) return false
-  if (/^\$\$[\s\S]*\$\$$/.test(s) || /^\\\[[\s\S]*\\\]$/.test(s)) return true
-  if (/^\\begin\{(align|aligned|equation|gather|matrix|pmatrix|bmatrix)\}/.test(s))
-    return true
-  if (/^(?:sum|prod|int|oint|lim)\s*[_^({]/i.test(s)) return true
-  if (/^[A-Za-z](?:_[A-Za-z0-9]+|\^[0-9(])/.test(s) && !/\b(the|and|for|with|that|this)\b/i.test(s))
-    return true
-  if (!/(?:^|\s)[A-Za-z](?:\([A-Za-z]\))?\s*=/.test(s)) return false
-  const prose = (s.match(/\b[a-z]{5,}\b/g) || []).filter(
-    (w) =>
-      !/^(sqrt|frac|cdot|cdots|ldots|infty|times|quad|text|mathrm|mbox|sigma|alpha|beta|gamma|theta|omega|delta|partial|nabla|sum|prod|int|log|ln|exp|min|max|arg|sin|cos|tan)\b/i.test(
-        w,
-      ),
-  )
-  if (prose.length > 6) return false
-  if (/[.!?]\s+[A-Z][a-z]{3,}\s/.test(s)) return false
-  return true
-}
-
 export function buildAcademicArticle(raw, activeCategories) {
   const conv = (t, o = {}) => convert(t, activeCategories, o)
 
@@ -739,7 +543,7 @@ export function buildAcademicArticle(raw, activeCategories) {
         const inner = ch.slice(2, -2)
         out += `<strong>${conv(inner, { lineBreaks: false }).html}</strong>`
       } else {
-        out += conv(ch, { lineBreaks: false }).html
+        out += conv(wrapInlineMathDelimiters(ch), { lineBreaks: false }).html
       }
     }
     return out
@@ -1042,11 +846,16 @@ export function applyKatexToOutput(root) {
         { left: '$', right: '$', display: false },
         { left: '\\[', right: '\\]', display: true },
         { left: '\\(', right: '\\)', display: false },
+        { left: '\\begin{equation}', right: '\\end{equation}', display: true },
+        { left: '\\begin{align}', right: '\\end{align}', display: true },
+        { left: '\\begin{align*}', right: '\\end{align*}', display: true },
+        { left: '\\begin{aligned}', right: '\\end{aligned}', display: true },
       ],
       ignoredTags: ['script', 'style', 'textarea', 'pre', 'code'],
       ignoredClasses: ['katex', 'katex-display', 'acad-eq-unicode'],
       strict: false,
       trust: true,
+      throwOnError: false,
       preProcess: (math) => normalizeLatexForKatex(math),
     })
   } catch {
