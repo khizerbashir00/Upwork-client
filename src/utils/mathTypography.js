@@ -255,7 +255,7 @@ function escRegex(s) {
   return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 }
 
-function toSuperscript(inner) {
+export function toSuperscript(inner) {
   let s = replaceGreekNames(String(inner).trim())
   s = s.replace(/\b(infty|infinity)\b/gi, INFINITY)
   let out = ''
@@ -268,7 +268,7 @@ function toSuperscript(inner) {
   return out
 }
 
-function toSubscript(inner) {
+export function toSubscript(inner) {
   let s = replaceGreekNames(String(inner).trim())
   let out = ''
   for (const ch of s) {

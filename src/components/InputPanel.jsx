@@ -1,5 +1,6 @@
 import { forwardRef } from 'react'
 import CategoryChips from './CategoryChips'
+import MathToolbar from './MathToolbar'
 
 const SAMPLE_KEYS = [
   { key: 'code', label: '⚡ Code' },
@@ -23,6 +24,9 @@ const InputPanel = forwardRef(function InputPanel(
     onAllOn,
     onAllOff,
     onSample,
+    onSuperscript,
+    onSubscript,
+    onLatex,
   },
   ref,
 ) {
@@ -48,6 +52,12 @@ const InputPanel = forwardRef(function InputPanel(
           </button>
         </div>
       </div>
+
+      <MathToolbar
+        onSuperscript={onSuperscript}
+        onSubscript={onSubscript}
+        onLatex={onLatex}
+      />
 
       <textarea
         ref={ref}

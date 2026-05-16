@@ -11,6 +11,7 @@ const OutputPanel = forwardRef(function OutputPanel(
     convBadgeText,
     diffRows,
     diffRuleCount,
+    mathBlockCount,
     diffEmptyMessage,
     onCopy,
     onExportPdf,
@@ -64,7 +65,12 @@ const OutputPanel = forwardRef(function OutputPanel(
         </div>
       </div>
 
-      <DiffSummary diffRows={diffRows} diffRuleCount={diffRuleCount} emptyMessage={diffEmptyMessage} />
+      <DiffSummary
+        diffRows={diffRows}
+        diffRuleCount={diffRuleCount}
+        mathBlockCount={mathBlockCount}
+        emptyMessage={diffEmptyMessage}
+      />
     </section>
   )
 })

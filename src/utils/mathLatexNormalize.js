@@ -128,6 +128,11 @@ export function shouldUseKatex(expr) {
   const t = String(expr).trim()
   if (!t) return false
   if (KATEX_REQUIRED.test(t)) return true
+  if (/\bint_\d+\^?infty\b/i.test(t)) return true
+  if (/\biint_\{?[A-Za-z]+\}?\b/i.test(t)) return true
+  if (/lim_\{|\\lim_\{/i.test(t)) return true
+  if (/\(1\+1\/x\)\^/i.test(t)) return true
+  if (/^f\s*\([^)]+\)\s*=/.test(t) && /ln|sin|cos|exp|\^|_/.test(t)) return true
   if (KATEX_PREFERRED.test(t)) return true
   if (/\\[a-zA-Z]+/.test(t) && !/^\\(?:alpha|beta|gamma|theta|sigma|lambda|pi|infty)\b/.test(t))
     return true
@@ -384,6 +389,12 @@ export function normalizeLatexForKatex(input) {
   s = s.replace(/L\^1\s*-\s*a\b/gi, 'L^{1-\\alpha}')
   s = s.replace(/L\^1-a\b/gi, 'L^{1-\\alpha}')
 
+  s = s.replace(/lim_\{x->infty\}/gi, '\\lim_{x \\to \\infty}')
+  s = s.replace(/lim_\{x->inf\}/gi, '\\lim_{x \\to \\infty}')
+  s = s.replace(/\(1\+1\/x\)\^x/gi, '\\left(1+\\frac{1}{x}\\right)^{x}')
+  s = s.replace(/f\(x\)=x\^2\s*ln\(x\)/gi, 'f(x)=x^{2}\\ln(x)')
+  s = s.replace(/f\(x\)=x\^2\s*\\ln\(x\)/gi, 'f(x)=x^{2}\\ln(x)')
+
   s = s.replace(/\s+/g, ' ').trim()
   return s
 }
@@ -409,6 +420,16 @@ export function wrapInlineMathDelimiters(text) {
       return `\\(${t}\\)`
     },
   )
+
+  s = s.replace(/\\frac\{[^{}]+\}\{[^{}]+\}/g, (m) => {
+    if (m.includes('\\(')) return m
+    return `\\(${m}\\)`
+  })
+
+  s = s.replace(/\\sqrt(?:\[[0-9]+\])?\{[^{}]+\}/g, (m) => {
+    if (m.includes('\\(')) return m
+    return `\\(${m}\\)`
+  })
 
   return s
 }

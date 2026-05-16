@@ -10,6 +10,7 @@ import {
   stripCitationStyleDirective,
   CITATION_STYLES,
 } from './citationStyles'
+import { collapseStackedMathLines } from './collapseStackedMath'
 import { preprocessMathText } from './mathEngine'
 
 export { detectCitationStyle, CITATION_STYLES } from './citationStyles'
@@ -59,6 +60,7 @@ export function preprocessAcademicDocument(raw, options = {}) {
 
   text = cleanupAcademicText(text)
   text = applyReferenceFormatting(text, citationStyle)
+  text = collapseStackedMathLines(text)
   text = repairDocumentMath(text)
   text = preprocessMathText(text, { inlineKatex: options.inlineKatex !== false })
 

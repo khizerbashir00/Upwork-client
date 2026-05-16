@@ -3,7 +3,13 @@ import Hero from '../components/Hero'
 import InputPanel from '../components/InputPanel'
 import Navbar from '../components/Navbar'
 import OutputPanel from '../components/OutputPanel'
+import LatexModal from '../components/LatexModal'
 import Toast from '../components/Toast'
+import {
+  applyUnicodeScript,
+  focusTextareaWithSelection,
+  insertLatexEquation,
+} from '../utils/editorTextUtils'
 import {
   CATEGORIES,
   applyKatexToOutput,
@@ -68,6 +74,8 @@ export default function HomePage() {
   )
   const [toast, setToast] = useState({ message: 'Done', visible: false, accent: '#4ee5a8' })
   const [scrollPorts, setScrollPorts] = useState({ input: null, output: null })
+  const [latexModalOpen, setLatexModalOpen] = useState(false)
+  const [latexModalKey, setLatexModalKey] = useState(0)
 
   const inputRef = useRef(null)
   const outputInnerRef = useRef(null)
@@ -93,6 +101,7 @@ export default function HomePage() {
         lastPlain: '',
         diffRows: [],
         diffRuleCount: 0,
+        mathBlockCount: 0,
         diffEmptyMessage: 'Nothing converted yet.',
       }
     }
@@ -104,6 +113,7 @@ export default function HomePage() {
     })
     const lastPlain = `${buildAcademicPlain(processed, activeCategories)}\n\n${result.plain}`
     const sorted = [...result.stats.values()].sort((a, b) => b.count - a.count)
+    const mathBlockCount = (articleHtml.match(/data-katex(?:-display)?/g) || []).length
 
     return {
       empty: false,
@@ -112,6 +122,7 @@ export default function HomePage() {
       lastPlain,
       diffRows: sorted,
       diffRuleCount: result.stats.size,
+      mathBlockCount,
       diffEmptyMessage:
         result.stats.size === 0 ? 'No symbols matched any active category.' : '',
     }
@@ -232,6 +243,51 @@ export default function HomePage() {
     }
   }, [pipeline.empty, showToast])
 
+  const applyTextareaEdit = useCallback((result) => {
+    if (!result) return false
+    setInputText(result.newValue)
+    setRawForOutput(result.newValue)
+    requestAnimationFrame(() => {
+      focusTextareaWithSelection(inputRef.current, result.cursorStart, result.cursorEnd)
+    })
+    return true
+  }, [])
+
+  const handleSuperscript = useCallback(() => {
+    const ta = inputRef.current
+    if (!ta) return
+    const result = applyUnicodeScript(ta.value, ta.selectionStart, ta.selectionEnd, 'sup')
+    if (!applyTextareaEdit(result)) {
+      showToast('Select text for superscript', '#fb7185')
+    }
+  }, [applyTextareaEdit, showToast])
+
+  const handleSubscript = useCallback(() => {
+    const ta = inputRef.current
+    if (!ta) return
+    const result = applyUnicodeScript(ta.value, ta.selectionStart, ta.selectionEnd, 'sub')
+    if (!applyTextareaEdit(result)) {
+      showToast('Select text for subscript', '#fb7185')
+    }
+  }, [applyTextareaEdit, showToast])
+
+  const handleOpenLatex = useCallback(() => {
+    setLatexModalKey((k) => k + 1)
+    setLatexModalOpen(true)
+  }, [])
+
+  const handleInsertLatex = useCallback(
+    (latex, opts) => {
+      const ta = inputRef.current
+      if (!ta) return
+      const result = insertLatexEquation(ta.value, ta.selectionStart, ta.selectionEnd, latex, opts)
+      if (applyTextareaEdit(result)) {
+        showToast('Equation inserted')
+      }
+    },
+    [applyTextareaEdit, showToast],
+  )
+
   const handleKeyDown = useCallback(
     (e) => {
       if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
@@ -254,7 +310,9 @@ export default function HomePage() {
   useSyncedScroll(scrollPorts.input, scrollPorts.output)
 
   const charCountText = `${rawForOutput.length.toLocaleString()} chars`
-  const convBadgeText = pipeline.empty ? '0 converted' : `${pipeline.result.total} converted`
+  const convBadgeText = pipeline.empty
+    ? '0 converted'
+    : `${pipeline.result.total + (pipeline.mathBlockCount || 0)} converted`
 
   return (
     <>
@@ -276,6 +334,9 @@ export default function HomePage() {
             onAllOn={handleAllOn}
             onAllOff={handleAllOff}
             onSample={handleSample}
+            onSuperscript={handleSuperscript}
+            onSubscript={handleSubscript}
+            onLatex={handleOpenLatex}
           />
           <OutputPanel
             ref={handleOutputRef}
@@ -285,6 +346,7 @@ export default function HomePage() {
             convBadgeText={convBadgeText}
             diffRows={pipeline.diffRows}
             diffRuleCount={pipeline.diffRuleCount}
+            mathBlockCount={pipeline.mathBlockCount}
             diffEmptyMessage={pipeline.diffEmptyMessage}
             onCopy={handleCopy}
             onExportPdf={handleExportPdf}
@@ -296,6 +358,13 @@ export default function HomePage() {
           © Bibcit — Glyph · intelligent symbol engine
         </p>
       </main>
+
+      <LatexModal
+        key={latexModalKey}
+        open={latexModalOpen}
+        onClose={() => setLatexModalOpen(false)}
+        onInsert={handleInsertLatex}
+      />
 
       <Toast message={toast.message} visible={toast.visible} accent={toast.accent} />
     </>

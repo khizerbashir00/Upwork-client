@@ -490,6 +490,37 @@ function findEquationSpanEnd(str) {
   return m ? m.index + 1 : str.length
 }
 
+function parseDisplayMathBlock(lines, startIdx) {
+  const t = lines[startIdx].trim()
+  if (!t.startsWith('$$')) return null
+
+  if (t.length > 4 && t.endsWith('$$')) {
+    return { latex: t.slice(2, -2).trim(), next: startIdx + 1 }
+  }
+
+  let body = t.slice(2)
+  let i = startIdx + 1
+  if (body.endsWith('$$')) {
+    return { latex: body.slice(0, -2).trim(), next: startIdx + 1 }
+  }
+
+  const parts = body ? [body] : []
+  while (i < lines.length) {
+    const lt = lines[i]
+    const tt = lt.trim()
+    if (tt === '$$' || tt.endsWith('$$')) {
+      if (tt !== '$$') parts.push(tt.slice(0, -2))
+      i++
+      break
+    }
+    parts.push(lt)
+    i++
+  }
+  const latex = parts.join('\n').trim()
+  if (!latex) return null
+  return { latex, next: i }
+}
+
 function splitLeadingTitle(body) {
   const lines = body.split('\n')
   const first = lines[0].trim()
@@ -567,6 +598,12 @@ export function buildAcademicArticle(raw, activeCategories, opt = {}) {
       const t = line.trim()
       if (!t) {
         li++
+        continue
+      }
+      const displayMath = parseDisplayMathBlock(lines, li)
+      if (displayMath) {
+        htmlParts.push(renderEquationBlock(displayMath.latex, activeCategories))
+        li = displayMath.next
         continue
       }
       const aligned = parseAlignedEquationBlock(lines, li)
@@ -671,6 +708,14 @@ export function buildAcademicArticle(raw, activeCategories, opt = {}) {
     if (t === '---' || t === '***' || t === '___') {
       parts.push('<hr class="acad-hr" />')
       i++
+      continue
+    }
+
+    const displayMath = parseDisplayMathBlock(lines, i)
+    if (displayMath) {
+      parts.push(renderEquationBlock(displayMath.latex, activeCategories))
+      i = displayMath.next
+      blockIndex++
       continue
     }
 
