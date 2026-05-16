@@ -10,6 +10,8 @@ import {
   prepareEquationRender,
   wrapInlineMathDelimiters,
 } from './mathEngine'
+import { segmentDocument } from './mathBlocks'
+import { isLatexLikeLine, protectMathZones, restoreMathZones } from './mathProtect'
 
 export {
   normalizeLatexForKatex,
@@ -355,6 +357,7 @@ export function extractPlain(raw, activeCategories, opt = {}) {
 export function convert(raw, activeCategories, opt = {}) {
   const lineBreaks = opt.lineBreaks !== false
   let text = opt.preprocessed ? raw : preprocessAcademicDocument(raw)
+  text = protectMathZones(text)
   const placeholders = new Map()
   const diffStats = new Map()
   let phId = 0
@@ -439,6 +442,7 @@ export function convert(raw, activeCategories, opt = {}) {
     })
   }
 
+  text = restoreMathZones(text)
   text = escHtml(text)
 
   const phRe = new RegExp(`${PH_OPEN}PH(\\d+)${PH_CLOSE}`, 'g')
@@ -589,54 +593,38 @@ export function buildAcademicArticle(raw, activeCategories, opt = {}) {
     return out
   }
 
-  function renderParagraphBody(r, lineOffset = 0) {
-    const lines = r.split(/\n/)
+  function renderParagraphBody(r) {
+    const segments = segmentDocument(r)
     const htmlParts = []
-    let li = 0
-    while (li < lines.length) {
-      const line = lines[li].trimEnd()
-      const t = line.trim()
-      if (!t) {
-        li++
+
+    for (const seg of segments) {
+      if (seg.type === 'math') {
+        htmlParts.push(renderEquationBlock(seg.latex, activeCategories))
         continue
       }
-      const displayMath = parseDisplayMathBlock(lines, li)
-      if (displayMath) {
-        htmlParts.push(renderEquationBlock(displayMath.latex, activeCategories))
-        li = displayMath.next
-        continue
-      }
-      const aligned = parseAlignedEquationBlock(lines, li)
-      if (aligned) {
-        htmlParts.push(
-          `<div class="acad-eq" data-katex-display="1" data-katex="${escAttr(aligned.latex)}"></div>`,
-        )
-        li = aligned.next
-        continue
-      }
-      if (isLikelyDisplayEquation(t)) {
-        htmlParts.push(renderEquationBlock(t, activeCategories))
-        li++
-        continue
-      }
-      const mix = splitMixedLine(t)
-      if (mix.length === 1 && mix[0].kind === 'text') {
-        htmlParts.push(`<p class="acad-p">${renderProseHtml(t)}</p>`)
-        li++
-        continue
-      }
-      for (const p of mix) {
-        if (p.kind === 'text') {
-          const tx = p.text.trim()
-          if (tx) htmlParts.push(`<p class="acad-p">${renderProseHtml(tx)}</p>`)
-        } else {
-          htmlParts.push(renderEquationBlock(p.text, activeCategories))
+
+      const paras = seg.content.split(/\n\s*\n/)
+      for (const para of paras) {
+        const t = para.trim()
+        if (!t) continue
+        const mix = splitMixedLine(t)
+        if (mix.length === 1 && mix[0].kind === 'text') {
+          htmlParts.push(`<p class="acad-p">${renderProseHtml(t)}</p>`)
+          continue
+        }
+        for (const p of mix) {
+          if (p.kind === 'text') {
+            const tx = p.text.trim()
+            if (tx) htmlParts.push(`<p class="acad-p">${renderProseHtml(tx)}</p>`)
+          } else {
+            htmlParts.push(renderEquationBlock(p.text, activeCategories))
+          }
         }
       }
-      li++
     }
     return htmlParts.join('')
   }
+
 
   function tryParseTable(lines, startIdx) {
     const row0 = lines[startIdx].trim()
@@ -853,11 +841,28 @@ export function buildAcademicArticle(raw, activeCategories, opt = {}) {
       )
         break
       if (tryParseTable(lines, i)) break
+      if (parseDisplayMathBlock(lines, i)) break
+      if (isLatexLikeLine(tt) || isLikelyDisplayEquation(tt)) break
       para.push(lt)
       i++
     }
     const body = para.join('\n').trim()
-    if (!body) continue
+    if (!body) {
+      const dm = parseDisplayMathBlock(lines, i)
+      if (dm) {
+        parts.push(renderEquationBlock(dm.latex, activeCategories))
+        i = dm.next
+        blockIndex++
+      } else {
+        const mt = lines[i]?.trim() || ''
+        if (mt && (isLatexLikeLine(mt) || isLikelyDisplayEquation(mt))) {
+          parts.push(renderEquationBlock(mt, activeCategories))
+          i++
+          blockIndex++
+        }
+      }
+      continue
+    }
 
     if (blockIndex === 0) {
       const lead = splitLeadingTitle(body)

@@ -12,6 +12,8 @@ import {
 } from './citationStyles'
 import { collapseStackedMathLines } from './collapseStackedMath'
 import { preprocessMathText } from './mathEngine'
+import { autoWrapDisplayLatexLines, wrapEnvironmentDisplayBlocks } from './mathLatexNormalize'
+import { protectMathZones, restoreMathZones } from './mathProtect'
 
 export { detectCitationStyle, CITATION_STYLES } from './citationStyles'
 
@@ -58,10 +60,14 @@ export function preprocessAcademicDocument(raw, options = {}) {
   let text = stripCitationStyleDirective(raw)
   const citationStyle = options.citationStyle || detectCitationStyle(raw)
 
+  text = protectMathZones(text)
   text = cleanupAcademicText(text)
+  text = restoreMathZones(text)
   text = applyReferenceFormatting(text, citationStyle)
   text = collapseStackedMathLines(text)
   text = repairDocumentMath(text)
+  text = wrapEnvironmentDisplayBlocks(text)
+  text = autoWrapDisplayLatexLines(text)
   text = preprocessMathText(text, { inlineKatex: options.inlineKatex !== false })
 
   return text

@@ -1,6 +1,5 @@
 import { forwardRef } from 'react'
 import CategoryChips from './CategoryChips'
-import MathToolbar from './MathToolbar'
 
 const SAMPLE_KEYS = [
   { key: 'code', label: '⚡ Code' },
@@ -24,9 +23,7 @@ const InputPanel = forwardRef(function InputPanel(
     onAllOn,
     onAllOff,
     onSample,
-    onSuperscript,
-    onSubscript,
-    onLatex,
+    onOpenQuestionBank,
   },
   ref,
 ) {
@@ -53,12 +50,6 @@ const InputPanel = forwardRef(function InputPanel(
         </div>
       </div>
 
-      <MathToolbar
-        onSuperscript={onSuperscript}
-        onSubscript={onSubscript}
-        onLatex={onLatex}
-      />
-
       <textarea
         ref={ref}
         value={value}
@@ -66,27 +57,30 @@ const InputPanel = forwardRef(function InputPanel(
         onKeyDown={onKeyDown}
         className="field nice-scroll w-full rounded-2xl p-5 text-[14px] leading-relaxed text-white/90 placeholder:text-white/30 resize-none font-mono"
         style={{ height: 'clamp(380px, 48vh, 520px)' }}
-        placeholder={`if (a >= 10 && b != 5) {
-   total = price * 5 / 2;
-   discount = total - (total * 0.15);
-}
+        placeholder={`Type naturally — math is detected automatically:
 
-The area of a circle: A = pi * r^2
-Energy mass equation: E = m * c^2
-Sum from 1 to n: sum_(i=1)^n i = n*(n+1)/2
+x^2 + y^2    H_2O    int_0^infty e^(-x) dx
+\\frac{a+b}{c}    \\sum_{i=1}^{n} i^2    lim_{x->infty}
 
-For all x in S, alpha + beta = gamma
-Price: USD 1500 + EUR 200 = total budget
+Code: if (a >= 10 && b != 5) { total = price * 5 / 2; }
 Chemistry: H2O + CO2 -> H2CO3`}
       />
 
-      <div className="mt-3 flex flex-wrap gap-1.5">
+      <div className="mt-3 flex flex-wrap gap-1.5 items-center">
         <span className="font-mono text-[10px] uppercase tracking-wider text-white/35 self-center mr-1">Try:</span>
         {SAMPLE_KEYS.map(({ key, label }) => (
           <button key={key} type="button" className="sample-chip" onClick={() => onSample(key)}>
             {label}
           </button>
         ))}
+        <span className="w-px h-4 bg-white/10 mx-1" />
+        <button type="button" className="sample-chip qb-open-btn" onClick={onOpenQuestionBank}>
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" />
+            <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z" />
+          </svg>
+          📚 Question Bank
+        </button>
       </div>
 
       <CategoryChips
@@ -99,7 +93,7 @@ Chemistry: H2O + CO2 -> H2CO3`}
       <div className="mt-5 flex flex-col sm:flex-row gap-3">
         <div className="flex-1 flex items-center px-4 py-3 rounded-xl field font-mono text-[11px] text-white/45">
           <span className="w-1.5 h-1.5 rounded-full bg-mint-400 mr-2 animate-pulse" />
-          Auto-converting as you type
+          Auto-detecting symbols & math as you type
         </div>
         <button
           type="button"

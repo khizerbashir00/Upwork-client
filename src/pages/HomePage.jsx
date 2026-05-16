@@ -3,13 +3,8 @@ import Hero from '../components/Hero'
 import InputPanel from '../components/InputPanel'
 import Navbar from '../components/Navbar'
 import OutputPanel from '../components/OutputPanel'
-import LatexModal from '../components/LatexModal'
+import QuestionBank from '../components/QuestionBank'
 import Toast from '../components/Toast'
-import {
-  applyUnicodeScript,
-  focusTextareaWithSelection,
-  insertLatexEquation,
-} from '../utils/editorTextUtils'
 import {
   CATEGORIES,
   applyKatexToOutput,
@@ -73,10 +68,8 @@ export default function HomePage() {
     () => new Set(Object.keys(CATEGORIES)),
   )
   const [toast, setToast] = useState({ message: 'Done', visible: false, accent: '#4ee5a8' })
+  const [qbOpen, setQbOpen] = useState(false)
   const [scrollPorts, setScrollPorts] = useState({ input: null, output: null })
-  const [latexModalOpen, setLatexModalOpen] = useState(false)
-  const [latexModalKey, setLatexModalKey] = useState(0)
-
   const inputRef = useRef(null)
   const outputInnerRef = useRef(null)
   const inputTextRef = useRef(INITIAL_DEMO)
@@ -124,7 +117,9 @@ export default function HomePage() {
       diffRuleCount: result.stats.size,
       mathBlockCount,
       diffEmptyMessage:
-        result.stats.size === 0 ? 'No symbols matched any active category.' : '',
+        result.stats.size === 0 && mathBlockCount === 0
+          ? 'No symbols matched any active category.'
+          : '',
     }
   }, [rawForOutput, activeCategories])
 
@@ -185,6 +180,26 @@ export default function HomePage() {
     requestAnimationFrame(() => inputRef.current?.focus())
   }, [])
 
+  const handleOpenQuestionBank = useCallback(() => setQbOpen(true), [])
+  const handleCloseQuestionBank = useCallback(() => setQbOpen(false), [])
+  const handleQbInsert = useCallback((latex) => {
+    const wrapped = `\n$$${latex}$$\n`
+    setInputText((prev) => {
+      const next = prev.endsWith('\n') ? prev + wrapped : prev + '\n' + wrapped
+      setRawForOutput(next)
+      return next
+    })
+    setQbOpen(false)
+    showToast('Equation inserted ✓')
+    requestAnimationFrame(() => {
+      const el = inputRef.current
+      if (el) {
+        el.focus()
+        el.scrollTop = el.scrollHeight
+      }
+    })
+  }, [showToast])
+
   const handleConvert = useCallback(() => {
     bumpPipeline()
     showToast('Converted ✓')
@@ -243,51 +258,6 @@ export default function HomePage() {
     }
   }, [pipeline.empty, showToast])
 
-  const applyTextareaEdit = useCallback((result) => {
-    if (!result) return false
-    setInputText(result.newValue)
-    setRawForOutput(result.newValue)
-    requestAnimationFrame(() => {
-      focusTextareaWithSelection(inputRef.current, result.cursorStart, result.cursorEnd)
-    })
-    return true
-  }, [])
-
-  const handleSuperscript = useCallback(() => {
-    const ta = inputRef.current
-    if (!ta) return
-    const result = applyUnicodeScript(ta.value, ta.selectionStart, ta.selectionEnd, 'sup')
-    if (!applyTextareaEdit(result)) {
-      showToast('Select text for superscript', '#fb7185')
-    }
-  }, [applyTextareaEdit, showToast])
-
-  const handleSubscript = useCallback(() => {
-    const ta = inputRef.current
-    if (!ta) return
-    const result = applyUnicodeScript(ta.value, ta.selectionStart, ta.selectionEnd, 'sub')
-    if (!applyTextareaEdit(result)) {
-      showToast('Select text for subscript', '#fb7185')
-    }
-  }, [applyTextareaEdit, showToast])
-
-  const handleOpenLatex = useCallback(() => {
-    setLatexModalKey((k) => k + 1)
-    setLatexModalOpen(true)
-  }, [])
-
-  const handleInsertLatex = useCallback(
-    (latex, opts) => {
-      const ta = inputRef.current
-      if (!ta) return
-      const result = insertLatexEquation(ta.value, ta.selectionStart, ta.selectionEnd, latex, opts)
-      if (applyTextareaEdit(result)) {
-        showToast('Equation inserted')
-      }
-    },
-    [applyTextareaEdit, showToast],
-  )
-
   const handleKeyDown = useCallback(
     (e) => {
       if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
@@ -334,9 +304,7 @@ export default function HomePage() {
             onAllOn={handleAllOn}
             onAllOff={handleAllOff}
             onSample={handleSample}
-            onSuperscript={handleSuperscript}
-            onSubscript={handleSubscript}
-            onLatex={handleOpenLatex}
+            onOpenQuestionBank={handleOpenQuestionBank}
           />
           <OutputPanel
             ref={handleOutputRef}
@@ -359,13 +327,7 @@ export default function HomePage() {
         </p>
       </main>
 
-      <LatexModal
-        key={latexModalKey}
-        open={latexModalOpen}
-        onClose={() => setLatexModalOpen(false)}
-        onInsert={handleInsertLatex}
-      />
-
+      <QuestionBank open={qbOpen} onClose={handleCloseQuestionBank} onInsert={handleQbInsert} />
       <Toast message={toast.message} visible={toast.visible} accent={toast.accent} />
     </>
   )

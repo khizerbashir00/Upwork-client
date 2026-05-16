@@ -1,60 +1,19 @@
 import { useCallback, useEffect, useId, useMemo, useState } from 'react'
-import katex from 'katex'
-import { normalizeLatexForKatex } from '../utils/mathLatexNormalize'
+import KatexPreview from './KatexPreview'
+import { LATEX_GALLERY } from '../utils/mathTemplates'
 
-const EXAMPLES = [
-  { label: 'Power', latex: 'x^2' },
-  { label: 'Subscript', latex: 'H_2O' },
-  { label: 'Fraction', latex: '\\frac{a+b}{c}' },
-  { label: 'Square root', latex: '\\sqrt{x}' },
-  { label: 'Integral', latex: '\\int_0^1 x^2 \\, dx' },
-]
+const CATEGORIES = [...new Set(LATEX_GALLERY.map((t) => t.category))]
 
-function KatexPreview({ latex, displayMode }) {
-  const normalized = useMemo(() => normalizeLatexForKatex(latex), [latex])
-
-  const preview = useMemo(() => {
-    if (!normalized) return { html: null, error: null }
-    try {
-      const html = katex.renderToString(normalized, {
-        displayMode,
-        throwOnError: true,
-        strict: false,
-        trust: true,
-      })
-      return { html, error: null }
-    } catch (err) {
-      return { html: null, error: String(err?.message || 'Invalid LaTeX') }
-    }
-  }, [normalized, displayMode])
-
-  if (!normalized) {
-    return <span className="latex-preview-empty">Preview appears here</span>
-  }
-  if (preview.error) {
-    return <span className="latex-preview-error">{preview.error}</span>
-  }
-  return (
-    <span
-      className={displayMode ? 'katex-display' : ''}
-      dangerouslySetInnerHTML={{ __html: preview.html }}
-    />
-  )
-}
-
-export default function LatexModal({ open, onClose, onInsert }) {
+export default function LatexModal({ open, onClose, onInsert, initialLatex = '\\frac{x^2+y^2}{a+b}' }) {
   const titleId = useId()
-  const [latex, setLatex] = useState('x^2')
+  const [latex, setLatex] = useState(initialLatex)
   const [displayMode, setDisplayMode] = useState(true)
+  const [activeCategory, setActiveCategory] = useState(CATEGORIES[0])
 
-  useEffect(() => {
-    if (!open) return
-    const onKey = (e) => {
-      if (e.key === 'Escape') onClose()
-    }
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
-  }, [open, onClose])
+  const filteredGallery = useMemo(
+    () => LATEX_GALLERY.filter((t) => t.category === activeCategory),
+    [activeCategory],
+  )
 
   const handleInsert = useCallback(() => {
     const trimmed = latex.trim()
@@ -62,6 +21,19 @@ export default function LatexModal({ open, onClose, onInsert }) {
     onInsert(trimmed, { display: displayMode })
     onClose()
   }, [latex, displayMode, onInsert, onClose])
+
+  useEffect(() => {
+    if (!open) return
+    const onKey = (e) => {
+      if (e.key === 'Escape') onClose()
+      if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
+        e.preventDefault()
+        handleInsert()
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [open, onClose, handleInsert])
 
   if (!open) return null
 
@@ -77,9 +49,11 @@ export default function LatexModal({ open, onClose, onInsert }) {
         <div className="flex items-start justify-between gap-4 mb-4">
           <div>
             <h2 id={titleId} className="font-mono text-[11px] uppercase tracking-[0.18em] text-white/50">
-              LaTeX equation
+              Equation editor
             </h2>
-            <p className="mt-1 text-sm text-white/55">Rendered live with KaTeX in the preview panel.</p>
+            <p className="mt-1 text-sm text-white/55">
+              LaTeX input with live KaTeX preview · Cmd+Enter to insert
+            </p>
           </div>
           <button
             type="button"
@@ -91,9 +65,30 @@ export default function LatexModal({ open, onClose, onInsert }) {
           </button>
         </div>
 
-        <div className="flex flex-wrap gap-1.5 mb-3">
-          {EXAMPLES.map(({ label, latex: sample }) => (
-            <button key={label} type="button" className="sample-chip" onClick={() => setLatex(sample)}>
+        <div className="flex flex-wrap gap-1 mb-2">
+          {CATEGORIES.map((cat) => (
+            <button
+              key={cat}
+              type="button"
+              className={`sample-chip${activeCategory === cat ? ' sample-chip--active' : ''}`}
+              onClick={() => setActiveCategory(cat)}
+            >
+              {cat}
+            </button>
+          ))}
+        </div>
+
+        <div className="flex flex-wrap gap-1.5 mb-3 max-h-24 overflow-y-auto nice-scroll">
+          {filteredGallery.map(({ id, label, latex: sample, display }) => (
+            <button
+              key={id}
+              type="button"
+              className="sample-chip"
+              onClick={() => {
+                setLatex(sample)
+                setDisplayMode(display)
+              }}
+            >
               {label}
             </button>
           ))}
@@ -105,8 +100,8 @@ export default function LatexModal({ open, onClose, onInsert }) {
         <textarea
           value={latex}
           onChange={(e) => setLatex(e.target.value)}
-          className="field nice-scroll w-full rounded-xl p-4 text-[13px] leading-relaxed text-white/90 font-mono resize-y min-h-[88px]"
-          placeholder="e.g. \frac{a+b}{c}"
+          className="field nice-scroll w-full rounded-xl p-4 text-[13px] leading-relaxed text-white/90 font-mono resize-y min-h-[100px]"
+          placeholder="\\frac{a}{b}, \\int_0^\\infty e^{-x} dx, \\begin{bmatrix}..."
           spellCheck={false}
           autoFocus
         />
@@ -120,7 +115,7 @@ export default function LatexModal({ open, onClose, onInsert }) {
               checked={displayMode}
               onChange={() => setDisplayMode(true)}
             />
-            Block equation
+            Block (display)
           </label>
           <label className="latex-mode-option">
             <input
@@ -137,7 +132,7 @@ export default function LatexModal({ open, onClose, onInsert }) {
           Live preview
         </label>
         <div
-          className={`latex-preview-panel field rounded-xl p-4 min-h-[72px] flex items-center justify-center${
+          className={`latex-preview-panel field rounded-xl p-4 min-h-[88px] flex items-center justify-center${
             displayMode ? ' latex-preview-panel--block' : ''
           }`}
           aria-live="polite"

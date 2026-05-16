@@ -9,6 +9,7 @@ import {
   isMathHeavyLine as typographyMathLine,
 } from './mathTypography'
 import { normalizeLatexForKatex, shouldUseKatex, wrapInlineMathDelimiters } from './mathLatexNormalize'
+import { isLatexLikeLine, protectMathZones, restoreMathZones } from './mathProtect'
 
 export { normalizeLatexForKatex, shouldUseKatex, wrapInlineMathDelimiters } from './mathLatexNormalize'
 export {
@@ -25,12 +26,15 @@ export function isComplexLatex(expr) {
 /** Prepare prose text: Unicode pass + inline KaTeX delimiters where needed. */
 export function preprocessMathText(raw, options = {}) {
   if (!raw) return ''
-  let text = applyMathTypography(raw, options)
+  let text = protectMathZones(raw)
+  text = applyMathTypography(text, options)
+  text = restoreMathZones(text)
   if (options.inlineKatex !== false) {
     text = text
       .split('\n')
       .map((line) => {
         if (!line.trim() || line.trim().startsWith('```')) return line
+        if (isLatexLikeLine(line)) return line
         if (typographyMathLine(line) && shouldUseKatex(line)) return line
         return wrapInlineMathDelimiters(line)
       })
@@ -43,7 +47,15 @@ export function preprocessMathText(raw, options = {}) {
 export function prepareEquationRender(expr) {
   const t = String(expr).trim()
   if (!t) return { mode: 'empty' }
-  if (shouldUseKatex(t)) {
+  const needsKatex =
+    shouldUseKatex(t) ||
+    /\\[a-zA-Z]/.test(t) ||
+    /\\frac|\\begin|\\int|\\sum|\\sqrt|\\lim|\\prod|\\iint|\\iiint|\\oint/.test(t) ||
+    /(?:^|[^\\])(?:int|sum|lim|prod|sqrt|frac)_/i.test(t) ||
+    /(?:\^|_)\{/.test(t) ||
+    /[A-Za-z]\^[{(0-9]/.test(t) ||
+    /[A-Za-z]_[{(0-9A-Za-z]/.test(t)
+  if (needsKatex) {
     return { mode: 'katex', latex: normalizeLatexForKatex(t) }
   }
   return { mode: 'unicode', text: equationToUnicode(t) }

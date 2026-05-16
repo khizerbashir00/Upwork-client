@@ -128,6 +128,7 @@ export function shouldUseKatex(expr) {
   const t = String(expr).trim()
   if (!t) return false
   if (KATEX_REQUIRED.test(t)) return true
+  if (/\\[a-zA-Z]+/.test(t)) return true
   if (/\bint_\d+\^?infty\b/i.test(t)) return true
   if (/\biint_\{?[A-Za-z]+\}?\b/i.test(t)) return true
   if (/lim_\{|\\lim_\{/i.test(t)) return true
@@ -355,6 +356,33 @@ function convertAlignLines(s) {
   return `\\begin{aligned}${body}\\end{aligned}`
 }
 
+function trimLatexWhitespace(s) {
+  return s
+    .split('\n')
+    .map((line) => line.replace(/[ \t]+/g, ' ').trimEnd())
+    .join('\n')
+    .trim()
+}
+
+function applyLightLatexFixes(s) {
+  let out = s
+  out = out.replace(/\s*->\s*/g, ' \\to ')
+  out = out.replace(/\s*<-\s*/g, ' \\leftarrow ')
+  out = out.replace(/(?<!\\)\binfty\b/gi, '\\infty')
+  out = out.replace(/(?<!\\)\binf\b(?![a-zA-Z])/gi, '\\infty')
+  out = out.replace(/lim_\{x\s*->\s*infty\}/gi, '\\lim_{x \\to \\infty}')
+  out = out.replace(/lim_\{x\s*->\s*inf\}/gi, '\\lim_{x \\to \\infty}')
+  return trimLatexWhitespace(out)
+}
+
+function isNativeLatexSource(s) {
+  return (
+    /\\(frac|dfrac|tfrac|begin|end|int|iint|iiint|oint|sum|prod|sqrt|lim|left|right|cdot|times|infty|alpha|beta|gamma|theta|sigma|lambda|pmatrix|bmatrix|vmatrix|matrix|cases|aligned|gather|text|mathrm|mathbf|mathbb)\b/.test(
+      s,
+    ) || /\\[a-zA-Z]+\{/.test(s)
+  )
+}
+
 /**
  * Full LaTeX normalization pipeline for KaTeX rendering.
  */
@@ -367,6 +395,10 @@ export function normalizeLatexForKatex(input) {
   else if (/^\$([^$]+)\$$/.test(s)) s = RegExp.$1.trim()
   else if (/^\\\(([\s\S]*)\\\)$/.test(s)) s = RegExp.$1.trim()
   else if (/^\\\[([\s\S]*)\\\]$/.test(s)) s = RegExp.$1.trim()
+
+  if (isNativeLatexSource(s)) {
+    return applyLightLatexFixes(s)
+  }
 
   for (const [uch, tex] of Object.entries(UNICODE_TO_LATEX)) {
     const esc = uch.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
@@ -382,7 +414,9 @@ export function normalizeLatexForKatex(input) {
   s = convertPiecewise(s)
   s = convertOperators(s)
   s = convertSubSup(s)
-  s = convertFractions(s)
+  if (!/\\frac/.test(s)) {
+    s = convertFractions(s)
+  }
   s = convertAlignLines(s)
 
   s = s.replace(/K\^a\b/gi, 'K^{\\alpha}')
@@ -395,7 +429,117 @@ export function normalizeLatexForKatex(input) {
   s = s.replace(/f\(x\)=x\^2\s*ln\(x\)/gi, 'f(x)=x^{2}\\ln(x)')
   s = s.replace(/f\(x\)=x\^2\s*\\ln\(x\)/gi, 'f(x)=x^{2}\\ln(x)')
 
-  s = s.replace(/\s+/g, ' ').trim()
+  return trimLatexWhitespace(s)
+}
+
+const PROSE_LINE_BLOCK =
+  /\b(the|and|for|with|that|this|from|have|been|were|will|would|should|because|however|therefore|when|where|which|what|find|compute|evaluate|differentiate|function|theorem|proof|example|problem|solution|consider|suppose|assume|given|note|chapter|section|figure|table)\b/i
+
+export function isDisplayLatexLine(t) {
+  if (!t || t.length > 600) return false
+  const words = t.split(/\s+/).filter(Boolean)
+  if (PROSE_LINE_BLOCK.test(t) && words.length >= 5 && !/^\\/.test(t.trim())) return false
+  if (
+    /^\\(frac|int|iint|iiint|oint|sum|prod|sqrt|lim|begin|dfrac|tfrac|binom|left|right|dfrac)/.test(t)
+  )
+    return true
+  if (/\\(frac|int|sum|sqrt|lim|prod|iint|iiint|oint)\b/.test(t) && words.length <= 24) return true
+  if (/^(int|sum|lim|iint|iiint|prod)_/i.test(t)) return true
+  if (/^lim_\{/i.test(t)) return true
+  if (/^f\s*\(\s*x\s*\)\s*=\\begin\{cases\}/i.test(t)) return true
+  if (/^\\frac\{d\}\{dx\}/.test(t)) return true
+  if (/\\begin\{(cases|bmatrix|pmatrix|matrix|aligned)/.test(t)) return true
+  if (/^\\lim(?:_\{|\b)/.test(t)) return true
+  if (/^\\end\{/.test(t)) return true
+  if (/\\\\\s*$/.test(t) && /[=\\&]/.test(t)) return true
+  return false
+}
+
+function isLatexContinuationLine(t) {
+  if (!t || t.length > 400) return false
+  if (/^\\end\{/.test(t)) return true
+  if (/^\\begin\{/.test(t)) return true
+  if (/^&=|^&/.test(t)) return true
+  if (/\\\\\s*$/.test(t)) return true
+  if (isDisplayLatexLine(t)) return true
+  return false
+}
+
+/** Wrap standalone LaTeX lines (and consecutive math runs) in $$ for display rendering. */
+export function autoWrapDisplayLatexLines(raw) {
+  if (!raw?.trim()) return raw
+  const lines = raw.replace(/\r\n/g, '\n').split('\n')
+  let inFence = false
+  const out = []
+  let i = 0
+
+  while (i < lines.length) {
+    const line = lines[i]
+    const t = line.trim()
+
+    if (t.startsWith('```')) {
+      inFence = !inFence
+      out.push(line)
+      i++
+      continue
+    }
+    if (inFence || !t) {
+      out.push(line)
+      i++
+      continue
+    }
+    if (t.startsWith('$$') || t.startsWith('\\[')) {
+      out.push(line)
+      i++
+      continue
+    }
+
+    if (isDisplayLatexLine(t) || /^\\begin\{/.test(t)) {
+      const chunk = [line]
+      let j = i + 1
+      while (j < lines.length) {
+        const nt = lines[j].trim()
+        if (!nt) break
+        if (nt.startsWith('$$') || nt.startsWith('```')) break
+        if (PROSE_LINE_BLOCK.test(nt) && nt.split(/\s+/).length >= 4 && !isLatexContinuationLine(nt))
+          break
+        if (isLatexContinuationLine(nt) || isDisplayLatexLine(nt)) {
+          chunk.push(lines[j])
+          j++
+          continue
+        }
+        break
+      }
+      const body = chunk.map((l) => l.trim()).join('\n')
+      out.push(`$$\n${body}\n$$`)
+      i = j
+      continue
+    }
+
+    out.push(line)
+    i++
+  }
+  return out.join('\n')
+}
+
+/** Promote LaTeX environments and display math to $$ blocks for KaTeX. */
+export function wrapEnvironmentDisplayBlocks(text) {
+  if (!text) return text
+  let s = text
+
+  s = s.replace(
+    /\\begin\{(cases|bmatrix|pmatrix|vmatrix|matrix|aligned|align\*?|gather\*?)\}[\s\S]*?\\end\{\1\}/g,
+    (m) => {
+      if (m.includes('$$')) return m
+      return `\n$$\n${m.trim()}\n$$\n`
+    },
+  )
+
+  s = s.replace(
+    /\\lim_\{[^}]+\}\\left\([^)]+\\right\)\^[^ \n]+/g,
+    (m) => (m.includes('$$') ? m : `\n$$\n${m.trim()}\n$$\n`),
+  )
+
   return s
 }
 
@@ -430,6 +574,53 @@ export function wrapInlineMathDelimiters(text) {
     if (m.includes('\\(')) return m
     return `\\(${m}\\)`
   })
+
+  s = s.replace(/\\lim_\{[^}]+\}/g, (m) => (m.includes('\\(') ? m : `\\(${m}\\)`))
+  s = s.replace(/\\sum_\{[^}]+\}\^\{[^}]+\}/g, (m) => (m.includes('\\(') ? m : `\\(${m}\\)`))
+  s = s.replace(/\\int_\{[^}]*\}\^\{[^}]*\}/g, (m) => (m.includes('\\(') ? m : `\\(${m}\\)`))
+  s = s.replace(/\\iint_\{[^}]*\}\^\{[^}]*\}/g, (m) => (m.includes('\\(') ? m : `\\(${m}\\)`))
+
+  s = s.replace(/\b([A-Za-z])\^\(([^)]+)\)/g, (m, b, exp) => {
+    if (m.includes('\\(')) return m
+    return `\\(${b}^{${exp}}\\)`
+  })
+
+  s = s.replace(/\b([A-Za-z])\^(\d+)\b/g, (m, b, exp) => {
+    if (m.includes('\\(')) return m
+    return `\\(${b}^{${exp}}\\)`
+  })
+
+  s = s.replace(/\b([A-Za-z])_(\d+)\b/g, (m, b, sub) => {
+    if (m.includes('\\(')) return m
+    return `\\(${b}_{${sub}}\\)`
+  })
+
+  s = s.replace(/\b([A-Za-z])\^\{([^}]+)\}/g, (m, b, exp) => {
+    if (m.includes('\\(')) return m
+    return `\\(${b}^{${exp}}\\)`
+  })
+
+  s = s.replace(/\b([A-Za-z])_\{([^}]+)\}/g, (m, b, sub) => {
+    if (m.includes('\\(')) return m
+    return `\\(${b}_{${sub}}\\)`
+  })
+
+  s = s.replace(
+    /\b(lim|int|sum|prod|iint|iiint)_\{[^}]+\}(\^\{[^}]+\})?/gi,
+    (m) => (m.includes('\\(') ? m : `\\(${m}\\)`),
+  )
+
+  s = s.replace(/\bx\s*-?>?\s*infty\b/gi, (m) => (m.includes('\\(') ? m : `\\(${m}\\)`))
+
+  s = s.replace(/\bsqrt\(([^)]+)\)/gi, (m, inner) => {
+    if (m.includes('\\(')) return m
+    return `\\(\\sqrt{${inner}}\\)`
+  })
+
+  s = s.replace(
+    /\bint_0\^infty\s+e\^\(-x\)\s+dx\b/gi,
+    (m) => (m.includes('\\(') ? m : `\\(${m}\\)`),
+  )
 
   return s
 }
